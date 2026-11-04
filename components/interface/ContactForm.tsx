@@ -17,8 +17,8 @@ function validate(v: { name: string; email: string; message: string }): Errors {
 }
 
 /**
- * Real form with validation and accessible labels. It posts to /api/contact.
- * "Sent" is shown only when the server confirms the message was forwarded.
+ * Client-safe contact form for static export. Supports an optional public endpoint
+ * (NEXT_PUBLIC_CONTACT_URL) or falls back directly to prefilled mailto.
  */
 export function ContactForm() {
   const uid = useId();
@@ -35,17 +35,37 @@ export function ContactForm() {
     setErrors(errs);
     if (Object.keys(errs).length) return;
     setStatus("sending");
+
+    // honeypot: real visitors never fill this hidden field
+    if (values.website.trim() !== "") {
+      setStatus("sent");
+      return;
+    }
+
+    const target = process.env.NEXT_PUBLIC_CONTACT_URL;
+    if (!target) {
+      if (portfolio.links.email) {
+        const mailto = `mailto:${portfolio.links.email}?subject=${encodeURIComponent(`Hello from ${values.name}`)}&body=${encodeURIComponent(values.message)}`;
+        window.location.href = mailto;
+        setStatus("sent");
+      } else {
+        setStatus("not-configured");
+      }
+      return;
+    }
+
     try {
-      const res = await fetch("/api/contact", {
+      const res = await fetch(target, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(values),
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ name: values.name.trim(), email: values.email.trim(), message: values.message.trim() }),
       });
       if (res.ok) {
         setStatus("sent");
         setValues({ name: "", email: "", message: "", website: "" });
-      } else if (res.status === 501) setStatus("not-configured");
-      else setStatus("failed");
+      } else {
+        setStatus("failed");
+      }
     } catch {
       setStatus("failed");
     }
@@ -104,7 +124,7 @@ export function ContactForm() {
                 Open your email app instead
               </a>
             ) : (
-              "Add an email address in data/portfolio.ts or set CONTACT_FORWARD_URL."
+              "Add an email address in data/portfolio.ts or set NEXT_PUBLIC_CONTACT_URL."
             )}
           </p>
         )}
